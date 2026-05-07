@@ -40,7 +40,9 @@
         "${workspaceFolder}/scripts/git/repo_tasks.py",
         "switch",
         "--branch",
-        "${input:repoBranchName}"
+        "${input:repoBranchName}",
+        "--remote",
+        "${input:repoSwitchRemoteName}"
       ],
       "windows": {
         "command": "py",
@@ -49,7 +51,9 @@
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "switch",
           "--branch",
-          "${input:repoBranchName}"
+          "${input:repoBranchName}",
+          "--remote",
+          "${input:repoSwitchRemoteName}"
         ]
       },
       "options": {
@@ -64,7 +68,7 @@
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入分支名称；存在则切换，不存在则创建并切换。"
+      "detail": "输入分支名称和远程源；本地存在则切换，本地不存在但远程存在则跟踪远程分支并拉取，两者都不存在则创建新本地分支。"
     },
     {
       "label": "仓库：提交当前改动",
@@ -174,23 +178,27 @@
       "detail": "输入远程源和目标分支；留空时优先复用“推送指定分支”任务缓存。若遇到非 fast-forward，可在终端输入 Y/yes 强推。"
     },
     {
-      "label": "仓库：拉取当前分支",
+      "label": "仓库：拉取远程分支",
       "type": "process",
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "pull-current",
+        "pull-remote",
         "--remote",
-        "${input:repoPullCurrentRemoteName}"
+        "${input:repoPullRemoteRemoteName}",
+        "--branch",
+        "${input:repoPullRemoteBranchName}"
       ],
       "windows": {
         "command": "py",
         "args": [
           "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "pull-current",
+          "pull-remote",
           "--remote",
-          "${input:repoPullCurrentRemoteName}"
+          "${input:repoPullRemoteRemoteName}",
+          "--branch",
+          "${input:repoPullRemoteBranchName}"
         ]
       },
       "options": {
@@ -205,7 +213,7 @@
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入远程源；留空时复用“拉取当前分支”任务缓存或回退到当前上游/ origin。"
+      "detail": "输入远程源和远程分支；先自动提交本地改动，再检查远程分支，同名分支优先合并，冲突或分支不同则确认后覆盖拉取。"
     },
     {
       "label": "仓库：设置远程仓库源",
@@ -250,7 +258,12 @@
     {
       "id": "repoBranchName",
       "type": "promptString",
-      "description": "输入分支名称；本地存在则切换，不存在则创建并切换。"
+      "description": "输入分支名称；本地存在则切换，本地不存在但远程存在则跟踪远程分支并拉取，两者都不存在则创建新本地分支。"
+    },
+    {
+      "id": "repoSwitchRemoteName",
+      "type": "promptString",
+      "description": "输入切换/创建分支时检查的远程源名称；留空时使用该任务缓存，缓存不存在时回退到当前上游或 origin。"
     },
     {
       "id": "repoCommitMessage",
@@ -273,9 +286,14 @@
       "description": "输入推送指定分支的目标远程分支；留空时使用该任务缓存，缓存不存在时使用当前分支。"
     },
     {
-      "id": "repoPullCurrentRemoteName",
+      "id": "repoPullRemoteRemoteName",
       "type": "promptString",
-      "description": "输入拉取当前分支使用的远程源名称；留空时使用该任务缓存，缓存不存在时回退到当前上游或 origin。"
+      "description": "输入要拉取的远程源名称，例如 origin。"
+    },
+    {
+      "id": "repoPullRemoteBranchName",
+      "type": "promptString",
+      "description": "输入要拉取的远程分支名称，例如 main 或 feature/demo。"
     },
     {
       "id": "repoRemoteSetName",
