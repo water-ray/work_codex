@@ -321,6 +321,14 @@ def local_branch_exists(ctx: RepoContext, branch_name: str) -> bool:
     return result.returncode == 0
 
 
+def local_branch_list(ctx: RepoContext) -> list[str]:
+    output = git_stdout(ctx, "branch", "--format=%(refname:short)", check=False)
+    return sorted(
+        unique_preserve_order([line.strip() for line in output.splitlines() if line.strip()]),
+        key=lambda item: item.lower(),
+    )
+
+
 def ensure_valid_branch_name(ctx: RepoContext, branch_name: str) -> None:
     result = git(ctx, "check-ref-format", "--branch", branch_name, check=False)
     if result.returncode != 0:
@@ -767,11 +775,16 @@ def cmd_status(ctx: RepoContext, _: argparse.Namespace) -> int:
 
 
 def cmd_switch(ctx: RepoContext, args: argparse.Namespace) -> int:
-    branch_name = args.branch.strip() or prompt_text("请输入要切换或创建的分支名称", required=True)
+    current_branch_name = ensure_branch(ctx)
+    remote = configured_remote_if_available(ctx)
+    branch_name = args.branch.strip() or choose_switch_branch(
+        ctx,
+        remote[0] if remote else None,
+        current_branch_name,
+    )
     ensure_valid_branch_name(ctx, branch_name)
     commit_all_changes(ctx, f"切换分支为{branch_name}前的自动提交")
 
-    remote = configured_remote_if_available(ctx)
     if not remote:
         if local_branch_exists(ctx, branch_name):
             git(ctx, "switch", branch_name)
@@ -818,6 +831,34 @@ def cmd_switch(ctx: RepoContext, args: argparse.Namespace) -> int:
         log(f"远程分支不存在，已创建并切换到新本地分支：{branch_name}")
         log(f"后续运行“仓库：远程-[推送] 🚀”可创建远程分支：{remote_name}/{branch_name}")
     return 0
+
+
+def choose_switch_branch(
+    ctx: RepoContext,
+    remote_name: str | None,
+    default_branch: str,
+) -> str:
+    if remote_name:
+        refresh_remote_branch_list(ctx, remote_name)
+        branches = remote_branch_list(ctx, remote_name)
+        print_remote_branch_options(remote_name, branches)
+        log("输入编号使用对应远程分支；输入文本作为分支名称；直接回车使用当前分支。")
+        return choose_branch_from_options(
+            "请输入要切换或创建的分支",
+            default_branch,
+            branches,
+            "输入编号不在远程分支列表范围内。",
+        )
+
+    branches = local_branch_list(ctx)
+    print_local_branch_options(branches)
+    log("输入编号使用对应本地分支；输入文本作为分支名称；直接回车使用当前分支。")
+    return choose_branch_from_options(
+        "请输入要切换或创建的分支",
+        default_branch,
+        branches,
+        "输入编号不在本地分支列表范围内。",
+    )
 
 
 def cmd_commit(ctx: RepoContext, args: argparse.Namespace) -> int:
@@ -1109,11 +1150,42 @@ def remote_branch_list(ctx: RepoContext, remote_name: str) -> list[str]:
 def print_remote_branch_options(remote_name: str, branches: list[str]) -> None:
     print_section(f"远程分支 {remote_name}")
     if not branches:
-        log("未找到远程分支；可以直接输入新分支名称，推送时会自动创建。")
+        log("未找到远程分支；可以直接输入分支名称。")
         return
     for index, branch_name in enumerate(branches, start=1):
         log(f"{index}. {branch_name}")
-    log("输入编号使用对应远程分支；输入文本作为目标分支；直接回车使用当前分支。")
+
+
+def print_local_branch_options(branches: list[str]) -> None:
+    print_section("本地分支")
+    if not branches:
+        log("未找到本地分支；可以直接输入新分支名称。")
+        return
+    for index, branch_name in enumerate(branches, start=1):
+        log(f"{index}. {branch_name}")
+
+
+def choose_branch_from_options(
+    prompt_label: str,
+    default_branch: str,
+    branches: list[str],
+    out_of_range_message: str,
+) -> str:
+    while True:
+        try:
+            answer = input(f"[{current_time_text()}] {prompt_label}(默认当前分支 {default_branch}): ").strip()
+        except EOFError:
+            return default_branch
+
+        if not answer:
+            return default_branch
+        if answer.isdigit():
+            selected_index = int(answer)
+            if 1 <= selected_index <= len(branches):
+                return branches[selected_index - 1]
+            log(out_of_range_message, stream=sys.stderr)
+            continue
+        return answer
 
 
 def choose_push_target_branch(
@@ -1124,22 +1196,13 @@ def choose_push_target_branch(
     refresh_remote_branch_list(ctx, remote_name)
     branches = remote_branch_list(ctx, remote_name)
     print_remote_branch_options(remote_name, branches)
-
-    while True:
-        try:
-            answer = input(f"[{current_time_text()}] 请输入远程分支(默认当前分支 {default_branch}): ").strip()
-        except EOFError:
-            return default_branch
-
-        if not answer:
-            return default_branch
-        if answer.isdigit():
-            selected_index = int(answer)
-            if 1 <= selected_index <= len(branches):
-                return branches[selected_index - 1]
-            log("输入编号不在远程分支列表范围内。", stream=sys.stderr)
-            continue
-        return answer
+    log("输入编号使用对应远程分支；输入文本作为目标分支；直接回车使用当前分支。")
+    return choose_branch_from_options(
+        "请输入远程分支",
+        default_branch,
+        branches,
+        "输入编号不在远程分支列表范围内。",
+    )
 
 
 def cmd_push(ctx: RepoContext, args: argparse.Namespace) -> int:
