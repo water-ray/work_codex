@@ -77,13 +77,13 @@ def log(message: str = "", *, stream: Any = sys.stdout) -> None:
 
 def command_display_name(command: str) -> str:
     mapping = {
-        "status": "仓库：查看当前分支",
-        "switch": "仓库：切换/创建分支",
-        "commit": "仓库：提交当前改动",
-        "push": "仓库：推送分支",
-        "pull-remote": "仓库：拉取远程分支",
-        "set-remote": "仓库：设置远程仓库源",
-        "restore-node": "仓库：还原节点",
+        "status": "仓库：分支-[查看] 🔎",
+        "switch": "仓库：本地-[切换] 🌿",
+        "commit": "仓库：本地-[提交] 📝",
+        "push": "仓库：远程-[推送] 🚀",
+        "pull-remote": "仓库：远程-[拉取] ⬇️",
+        "set-remote": "仓库：置远程源 🔗",
+        "restore-node": "仓库：本地-[还原] ↩️",
     }
     return mapping.get(command, command)
 
@@ -363,7 +363,7 @@ def ensure_remote_exists(ctx: RepoContext, remote_name: str) -> None:
     raise TaskError(
         f"未找到远程源：{remote_name}\n"
         f"当前可用远程源：{available}\n"
-        '可使用任务“仓库：设置远程仓库源”进行新增或更新。'
+        '可使用任务“仓库：置远程源 🔗”进行新增或更新。'
     )
 
 
@@ -394,7 +394,7 @@ def require_configured_remote(ctx: RepoContext) -> tuple[str, str]:
     if remote:
         return remote
 
-    raise TaskError('未设置远程源，请先执行任务“仓库：设置远程仓库源”。')
+    raise TaskError('未设置远程源，请先执行任务“仓库：置远程源 🔗”。')
 
 
 def is_non_fast_forward_push_error(result: subprocess.CompletedProcess[str]) -> bool:
@@ -736,7 +736,7 @@ def cmd_status(ctx: RepoContext, _: argparse.Namespace) -> int:
         log_status_row("[本地分支]", "未检测到", f"{ctx.root}（可能处于 detached HEAD 状态）")
 
     if not remotes:
-        log_status_row("[远程分支]", '无远程源,使用"仓库：设置远程仓库源"任务设置')
+        log_status_row("[远程分支]", '无远程源,使用"仓库：置远程源 🔗"任务设置')
     else:
         if upstream and upstream.get("remote"):
             remote_name = upstream["remote"]
@@ -816,7 +816,7 @@ def cmd_switch(ctx: RepoContext, args: argparse.Namespace) -> int:
     else:
         git(ctx, "switch", "-c", branch_name)
         log(f"远程分支不存在，已创建并切换到新本地分支：{branch_name}")
-        log(f"后续运行“仓库：推送分支”可创建远程分支：{remote_name}/{branch_name}")
+        log(f"后续运行“仓库：远程-[推送] 🚀”可创建远程分支：{remote_name}/{branch_name}")
     return 0
 
 
