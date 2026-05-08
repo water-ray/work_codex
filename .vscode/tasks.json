@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "仓库：查看当前分支",
+      "label": "仓库：分支-[查看]",
       "type": "process",
       "command": "python3",
       "args": [
@@ -33,7 +33,7 @@
       "detail": "按固定标签显示本地分支、远程分支、fetch/push 地址和作者信息；用于查看当前仓库设置。"
     },
     {
-      "label": "仓库：设置远程仓库源",
+      "label": "仓库：置远程源",
       "type": "process",
       "command": "python3",
       "args": [
@@ -64,7 +64,7 @@
       "detail": "在终端输入远程源名称与地址；不存在则新增，已存在则更新绑定，并设置为当前仓库默认远程源。"
     },
     {
-      "label": "仓库：拉取远程分支",
+      "label": "仓库：远程-[拉取]",
       "type": "process",
       "command": "python3",
       "args": [
@@ -95,7 +95,7 @@
       "detail": "在终端输入远程分支；未设置远程源时提示先设置。先自动提交本地改动，同名分支优先合并，失败或分支不同则确认后覆盖拉取。"
     },
     {
-      "label": "仓库：切换/创建分支",
+      "label": "仓库：本地-[切换]",
       "type": "process",
       "command": "python3",
       "args": [
@@ -126,7 +126,7 @@
       "detail": "在终端输入分支名称； 切换前自动提交当前改动。远程分支存在时优先切换/同步远程分支，未设置远程源或远程分支不存在时仅处理本地分支。"
     },
     {
-      "label": "仓库：提交当前改动",
+      "label": "仓库：本地-[提交]",
       "type": "process",
       "command": "python3",
       "args": [
@@ -157,7 +157,7 @@
       "detail": "先显示上次提交、本次改动和规则生成的中文默认提交说明；直接回车使用默认说明，手动输入则使用输入内容提交。"
     },
     {
-      "label": "仓库：推送分支",
+      "label": "仓库：远程-[推送]",
       "type": "process",
       "command": "python3",
       "args": [
@@ -186,6 +186,37 @@
       },
       "problemMatcher": [],
       "detail": "在终端输入目标远程分支，默认当前分支；未设置远程源时提示先设置。远程分支不存在则创建，已存在则普通推送，失败时显示差异并确认是否强推。"
+    },
+    {
+      "label": "仓库：本地-[还原]",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/git/repo_tasks.py",
+        "restore-node"
+      ],
+      "windows": {
+        "command": "py",
+        "args": [
+          "-3",
+          "${workspaceFolder}/scripts/git/repo_tasks.py",
+          "restore-node"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": true
+      },
+      "runOptions": {
+        "reevaluateOnRerun": true
+      },
+      "problemMatcher": [],
+      "detail": "倒序分页列出最近提交点；输入编号并二次确认后执行 git reset --hard 还原到目标节点，直接回车取消。"
     }
   ]
 }

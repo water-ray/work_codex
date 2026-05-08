@@ -83,6 +83,7 @@ def command_display_name(command: str) -> str:
         "push": "仓库：推送分支",
         "pull-remote": "仓库：拉取远程分支",
         "set-remote": "仓库：设置远程仓库源",
+        "restore-node": "仓库：还原节点",
     }
     return mapping.get(command, command)
 
@@ -489,6 +490,21 @@ def confirm_force_pull(reason: str) -> bool:
     log("输入其他内容或直接回车将取消。")
     try:
         answer = input(f"[{current_time_text()}] 是否执行覆盖拉取？[y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer in {"y", "yes"}
+
+
+def confirm_restore_node(target: dict[str, str], status_text: str) -> bool:
+    print_section("还原确认")
+    log(f"目标节点: {target['short']}  {target['time']}  {target['message']}")
+    log("此操作会执行 git reset --hard，将当前分支和已跟踪文件还原到目标节点。")
+    log("未提交的已跟踪改动会被丢弃；未跟踪文件不会被删除。")
+    if status_text:
+        print_section("当前未提交改动")
+        log(status_text)
+    try:
+        answer = input(f"[{current_time_text()}] 是否还原到该节点？Y确认(默认取消): ").strip().lower()
     except EOFError:
         return False
     return answer in {"y", "yes"}
@@ -979,6 +995,93 @@ def commit_all_changes(ctx: RepoContext, message: str) -> bool:
     return True
 
 
+def escape_log_message(message: str) -> str:
+    return message.strip().replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+
+
+def recent_commits(ctx: RepoContext, skip: int, count: int) -> list[dict[str, str]]:
+    output = git_stdout(
+        ctx,
+        "log",
+        f"--skip={skip}",
+        f"--max-count={count}",
+        "--date=format:%Y-%m-%d %H:%M:%S",
+        "--format=%H%x1f%h%x1f%cd%x1f%B%x1e",
+        check=False,
+    )
+    commits: list[dict[str, str]] = []
+    for record in output.split("\x1e"):
+        record = record.strip()
+        if not record:
+            continue
+        parts = record.split("\x1f", 3)
+        if len(parts) != 4:
+            continue
+        full_hash, short_hash, commit_time, message = parts
+        commits.append(
+            {
+                "hash": full_hash.strip(),
+                "short": short_hash.strip(),
+                "time": commit_time.strip(),
+                "message": escape_log_message(message),
+            }
+        )
+    return commits
+
+
+def print_commit_page(commits: list[dict[str, str]], start_index: int, page_size: int) -> None:
+    print_section(f"最近提交点 {start_index}-{start_index + page_size - 1}")
+    for offset, commit in enumerate(commits, start=start_index):
+        log(f"{offset}. {commit['short']}  {commit['time']}  {commit['message']}")
+    log("输入编号还原到对应节点；输入 0 查看更早的 10 个提交点；直接回车取消。")
+
+
+def cmd_restore_node(ctx: RepoContext, _: argparse.Namespace) -> int:
+    if not has_commits(ctx):
+        raise TaskError("当前仓库没有可还原的提交节点。")
+
+    page_size = 10
+    page = 0
+    while True:
+        start_index = page * page_size + 1
+        commits = recent_commits(ctx, page * page_size, page_size)
+        if not commits:
+            log("没有更多提交点。")
+            return 0
+
+        print_commit_page(commits, start_index, page_size)
+        try:
+            answer = input(f"[{current_time_text()}] 请选择还原节点: ").strip()
+        except EOFError:
+            log("已取消还原节点任务。")
+            return 0
+
+        if not answer:
+            log("已取消还原节点任务。")
+            return 0
+        if answer == "0":
+            page += 1
+            continue
+        if not answer.isdigit():
+            log("输入无效，请输入当前显示的编号、0 或直接回车取消。", stream=sys.stderr)
+            continue
+
+        selected_index = int(answer)
+        if selected_index < start_index or selected_index >= start_index + len(commits):
+            log("输入编号不在当前显示范围内。", stream=sys.stderr)
+            continue
+
+        target = commits[selected_index - start_index]
+        status_text = working_tree_status(ctx)
+        if not confirm_restore_node(target, status_text):
+            log("已取消还原节点任务。")
+            return 0
+
+        git(ctx, "reset", "--hard", target["hash"])
+        log(f"已还原到节点：{target['short']}  {target['time']}  {target['message']}")
+        return 0
+
+
 def cmd_push(ctx: RepoContext, args: argparse.Namespace) -> int:
     current_branch_name = ensure_branch(ctx)
     remote_name, remote_source = require_configured_remote(ctx)
@@ -1187,6 +1290,11 @@ def build_parser() -> argparse.ArgumentParser:
     set_remote_parser.add_argument("--name", default="")
     set_remote_parser.add_argument("--url", default="")
     set_remote_parser.set_defaults(handler=cmd_set_remote)
+
+    restore_node_parser = subparsers.add_parser(
+        "restore-node", help="Reset current branch to a selected recent commit."
+    )
+    restore_node_parser.set_defaults(handler=cmd_restore_node)
 
     return parser
 
