@@ -132,7 +132,7 @@
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入远程源；留空时复用“推送当前分支”任务缓存或回退到当前上游/ origin。若遇到非 fast-forward，可在终端输入 Y/yes 强推。"
+      "detail": "输入远程源；留空时复用“推送当前分支”任务缓存或回退到当前上游/ origin。若遇到非 fast-forward，会显示本地/远程提交差异，再输入 Y/yes 确认强推。"
     },
     {
       "label": "仓库：推送指定分支",

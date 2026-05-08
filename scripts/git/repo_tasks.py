@@ -423,13 +423,59 @@ def is_non_fast_forward_push_error(result: subprocess.CompletedProcess[str]) -> 
     return any(marker in combined for marker in markers)
 
 
-def confirm_force_push() -> bool:
+def print_push_commit_diff(ctx: RepoContext, remote_name: str, branch_name: str) -> None:
+    upstream_ref = remote_tracking_ref(remote_name, branch_name)
+    print_section("提交差异")
+    if not fetch_remote_branch(ctx, remote_name, branch_name):
+        log(f"[远程分支] {upstream_ref} 不存在。")
+        return
+
+    count_output = git_stdout(
+        ctx,
+        "rev-list",
+        "--left-right",
+        "--count",
+        f"HEAD...{upstream_ref}",
+        check=False,
+    )
+    local_count = "?"
+    remote_count = "?"
+    if count_output:
+        parts = count_output.split()
+        if len(parts) >= 2:
+            local_count, remote_count = parts[0], parts[1]
+
+    log(f"[本地分支 {branch_name} (新 {local_count})] - [远程分支 {upstream_ref} (旧 {remote_count})]")
+    diff_output = git_stdout(
+        ctx,
+        "log",
+        "--left-right",
+        "--cherry-pick",
+        "--pretty=format:%m %h %s",
+        f"HEAD...{upstream_ref}",
+        check=False,
+    )
+    if not diff_output:
+        log("无提交说明差异。")
+        return
+
+    for line in diff_output.splitlines():
+        if line.startswith("<"):
+            log(f"[本地新增] {line[2:]}")
+        elif line.startswith(">"):
+            log(f"[远程独有] {line[2:]}")
+        else:
+            log(line)
+
+
+def confirm_force_push(remote_name: str, branch_name: str) -> bool:
     print_section("推送冲突")
     log("检测到远程分支存在未合并提交，普通推送已被 Git 拒绝。")
-    log("如果确认要覆盖远程分支，请输入 Y 或 yes 继续强制推送。")
-    log("输入其他内容或直接回车将取消。")
+    log("强制推送会用本地分支覆盖远程分支。")
     try:
-        answer = input(f"[{current_time_text()}] 是否执行强制推送？[y/N]: ").strip().lower()
+        answer = input(
+            f"[{current_time_text()}] 是否强制推送覆盖远程分支{remote_name}/{branch_name}? Y确认(默认取消): "
+        ).strip().lower()
     except EOFError:
         return False
     return answer in {"y", "yes"}
@@ -482,11 +528,12 @@ def run_push_with_optional_force(
         )
 
     log(f"普通推送失败，命令耗时 {format_duration(perf_counter() - push_started)}")
+    print_push_commit_diff(ctx, remote_name, branch_name)
 
     if not sys.stdin.isatty():
         raise TaskError("当前终端不可交互，无法确认是否强制推送。")
 
-    if not confirm_force_push():
+    if not confirm_force_push(remote_name, branch_name):
         raise TaskError("已取消强制推送，远程未发生变更。")
 
     log()
