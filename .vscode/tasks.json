@@ -30,124 +30,22 @@
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "按固定标签显示本地分支、远程分支、fetch/push 地址和作者信息；作者信息缺失且已配置远程源时，可通过 gh 登录账号自动补全。"
+      "detail": "按固定标签显示本地分支、远程分支、fetch/push 地址和作者信息；用于查看当前仓库设置。"
     },
     {
-      "label": "仓库：切换/创建分支",
+      "label": "仓库：设置远程仓库源",
       "type": "process",
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "switch",
-        "--branch",
-        "${input:repoBranchName}"
+        "set-remote"
       ],
       "windows": {
         "command": "py",
         "args": [
           "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "switch",
-          "--branch",
-          "${input:repoBranchName}"
-        ]
-      },
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "clear": true
-      },
-      "runOptions": {
-        "reevaluateOnRerun": true
-      },
-      "problemMatcher": [],
-      "detail": "输入分支名称；切换前自动提交当前改动，本地存在则切换，本地不存在但远程存在则自动检查远程分支并拉取，两者都不存在则创建新本地分支。"
-    },
-    {
-      "label": "仓库：提交当前改动",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "commit",
-        "--message",
-        "${input:repoCommitMessage}"
-      ],
-      "windows": {
-        "command": "py",
-        "args": [
-          "-3",
-          "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "commit",
-          "--message",
-          "${input:repoCommitMessage}"
-        ]
-      },
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "clear": true
-      },
-      "runOptions": {
-        "reevaluateOnRerun": true
-      },
-      "problemMatcher": [],
-      "detail": "输入提交说明后，自动暂存并提交当前全部改动。 "
-    },
-    {
-      "label": "仓库：推送当前分支",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "push-current"
-      ],
-      "windows": {
-        "command": "py",
-        "args": [
-          "-3",
-          "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "push-current"
-        ]
-      },
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "clear": true
-      },
-      "runOptions": {
-        "reevaluateOnRerun": true
-      },
-      "problemMatcher": [],
-      "detail": "使用当前仓库默认远程源推送当前分支；默认远程源由“仓库：设置远程仓库源”任务写入。若遇到非 fast-forward，会显示本地/远程提交差异，再输入 Y/yes 确认强推。"
-    },
-    {
-      "label": "仓库：推送指定分支",
-      "type": "process",
-      "command": "python3",
-      "args": [
-        "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "push-branch",
-        "--branch",
-        "${input:repoPushBranchTargetBranch}"
-      ],
-      "windows": {
-        "command": "py",
-        "args": [
-          "-3",
-          "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "push-branch",
-          "--branch",
-          "${input:repoPushBranchTargetBranch}"
+          "set-remote"
         ]
       },
       "options": {
@@ -163,7 +61,7 @@
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入目标分支，使用当前仓库默认远程源推送；目标分支留空时复用该任务缓存或当前分支。若遇到非 fast-forward，可在终端输入 Y/yes 强推。"
+      "detail": "在终端输入远程源名称与地址；不存在则新增，已存在则更新绑定，并设置为当前仓库默认远程源。"
     },
     {
       "label": "仓库：拉取远程分支",
@@ -171,18 +69,14 @@
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "pull-remote",
-        "--branch",
-        "${input:repoPullRemoteBranchName}"
+        "pull-remote"
       ],
       "windows": {
         "command": "py",
         "args": [
           "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "pull-remote",
-          "--branch",
-          "${input:repoPullRemoteBranchName}"
+          "pull-remote"
         ]
       },
       "options": {
@@ -191,36 +85,29 @@
       "presentation": {
         "reveal": "always",
         "panel": "shared",
+        "focus": true,
         "clear": true
       },
       "runOptions": {
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入远程分支，使用当前仓库默认远程源拉取；远程分支留空时复用该任务缓存。先自动提交本地改动，再检查远程分支，同名分支优先合并，冲突或分支不同则确认后覆盖拉取。"
+      "detail": "在终端输入远程分支；未设置远程源时提示先设置。先自动提交本地改动，同名分支优先合并，失败或分支不同则确认后覆盖拉取。"
     },
     {
-      "label": "仓库：设置远程仓库源",
+      "label": "仓库：切换/创建分支",
       "type": "process",
       "command": "python3",
       "args": [
         "${workspaceFolder}/scripts/git/repo_tasks.py",
-        "set-remote",
-        "--name",
-        "${input:repoRemoteSetName}",
-        "--url",
-        "${input:repoRemoteSetUrl}"
+        "switch"
       ],
       "windows": {
         "command": "py",
         "args": [
           "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
-          "set-remote",
-          "--name",
-          "${input:repoRemoteSetName}",
-          "--url",
-          "${input:repoRemoteSetUrl}"
+          "switch"
         ]
       },
       "options": {
@@ -229,45 +116,76 @@
       "presentation": {
         "reveal": "always",
         "panel": "shared",
+        "focus": true,
         "clear": true
       },
       "runOptions": {
         "reevaluateOnRerun": true
       },
       "problemMatcher": [],
-      "detail": "输入远程源名称与地址；不存在则新增，已存在则更新绑定，并设置为当前仓库默认远程源。"
-    }
-  ],
-  "inputs": [
-    {
-      "id": "repoBranchName",
-      "type": "promptString",
-      "description": "输入分支名称；切换前自动提交当前改动，本地存在则切换，本地不存在但远程存在则自动检查远程分支并拉取，两者都不存在则创建新本地分支。"
+      "detail": "在终端输入分支名称；切换前自动提交当前改动。远程分支存在时优先切换/同步远程分支，未设置远程源或远程分支不存在时仅处理本地分支。"
     },
     {
-      "id": "repoCommitMessage",
-      "type": "promptString",
-      "description": "输入提交说明；任务会自动提交当前全部改动。"
+      "label": "仓库：提交当前改动",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/git/repo_tasks.py",
+        "commit"
+      ],
+      "windows": {
+        "command": "py",
+        "args": [
+          "-3",
+          "${workspaceFolder}/scripts/git/repo_tasks.py",
+          "commit"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": true
+      },
+      "runOptions": {
+        "reevaluateOnRerun": true
+      },
+      "problemMatcher": [],
+      "detail": "在终端输入提交说明后，自动暂存并提交当前全部改动。"
     },
     {
-      "id": "repoPushBranchTargetBranch",
-      "type": "promptString",
-      "description": "输入推送指定分支的目标远程分支；留空时使用该任务缓存，缓存不存在时使用当前分支。"
-    },
-    {
-      "id": "repoPullRemoteBranchName",
-      "type": "promptString",
-      "description": "输入要拉取的远程分支名称，例如 main 或 feature/demo；留空时使用 temp/git_tasks/pull-remote.json 中的该任务缓存。"
-    },
-    {
-      "id": "repoRemoteSetName",
-      "type": "promptString",
-      "description": "输入远程源名称，例如 origin。"
-    },
-    {
-      "id": "repoRemoteSetUrl",
-      "type": "promptString",
-      "description": "输入远程仓库地址，例如 https://github.com/user/repo.git。"
+      "label": "仓库：推送分支",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/git/repo_tasks.py",
+        "push"
+      ],
+      "windows": {
+        "command": "py",
+        "args": [
+          "-3",
+          "${workspaceFolder}/scripts/git/repo_tasks.py",
+          "push"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "clear": true
+      },
+      "runOptions": {
+        "reevaluateOnRerun": true
+      },
+      "problemMatcher": [],
+      "detail": "在终端输入目标远程分支，默认当前分支；未设置远程源时提示先设置。远程分支不存在则创建，已存在则普通推送，失败时显示差异并确认是否强推。"
     }
   ]
 }

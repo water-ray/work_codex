@@ -34,7 +34,6 @@ class TaskError(RuntimeError):
 class RepoContext:
     git_exe: str
     root: Path
-    cache_dir: Path
 
 
 def configure_stdio() -> None:
@@ -81,8 +80,7 @@ def command_display_name(command: str) -> str:
         "status": "仓库：查看当前分支",
         "switch": "仓库：切换/创建分支",
         "commit": "仓库：提交当前改动",
-        "push-current": "仓库：推送当前分支",
-        "push-branch": "仓库：推送指定分支",
+        "push": "仓库：推送分支",
         "pull-remote": "仓库：拉取远程分支",
         "set-remote": "仓库：设置远程仓库源",
     }
@@ -214,8 +212,7 @@ def build_repo_context() -> RepoContext:
         raise TaskError("当前目录不是 Git 仓库，无法执行仓库任务。")
 
     root = Path(root_result.stdout.strip()).resolve()
-    cache_dir = root / "temp" / "git_tasks"
-    return RepoContext(git_exe=git_exe, root=root, cache_dir=cache_dir)
+    return RepoContext(git_exe=git_exe, root=root)
 
 
 def git(ctx: RepoContext, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -238,39 +235,23 @@ def git_stdout(ctx: RepoContext, *args: str, check: bool = True) -> str:
     return git(ctx, *args, check=check).stdout.strip()
 
 
-def task_cache_path(ctx: RepoContext, task_key: str) -> Path:
-    if not re.fullmatch(r"[a-z0-9-]+", task_key):
-        raise TaskError(f"任务缓存名称不合法：{task_key}")
-    return ctx.cache_dir / f"{task_key}.json"
-
-
-def load_task_cache(ctx: RepoContext, task_key: str) -> dict[str, Any]:
-    cache_path = task_cache_path(ctx, task_key)
-    if not cache_path.exists():
-        return {}
+def prompt_text(label: str, default: str = "", *, required: bool = False) -> str:
+    prompt = f"[{current_time_text()}] {label}"
+    if default:
+        prompt += f"（默认：{default}）"
+    prompt += ": "
 
     try:
-        return json.loads(cache_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+        answer = input(prompt).strip()
+    except EOFError as error:
+        if default:
+            return default
+        raise TaskError(f"{label}不能为空。") from error
 
-
-def save_task_cache(ctx: RepoContext, task_key: str, **updates: str | None) -> None:
-    cache = load_task_cache(ctx, task_key)
-    for key, value in updates.items():
-        if value is None:
-            cache.pop(key, None)
-            continue
-        text = value.strip()
-        if text:
-            cache[key] = text
-
-    cache_path = task_cache_path(ctx, task_key)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(
-        json.dumps(cache, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    value = answer or default
+    if required and not value:
+        raise TaskError(f"{label}不能为空。")
+    return value
 
 
 def current_branch(ctx: RepoContext) -> str | None:
@@ -388,62 +369,25 @@ def set_configured_repo_task_remote(ctx: RepoContext, remote_name: str) -> None:
     git(ctx, "config", "--local", "codex.repoTasks.remote", remote_name)
 
 
-def resolve_remote(ctx: RepoContext, explicit_remote: str) -> tuple[str, str]:
-    remote_input = explicit_remote.strip()
-    if remote_input:
-        return remote_input, "手动输入"
-
-    configured_remote = configured_repo_task_remote(ctx)
-    if configured_remote:
-        return configured_remote, "仓库默认远程源"
-
-    upstream = current_upstream(ctx)
-    if upstream and upstream.get("remote"):
-        return upstream["remote"], "当前上游"
+def configured_remote_if_available(ctx: RepoContext) -> tuple[str, str] | None:
+    remote_name = configured_repo_task_remote(ctx)
+    if not remote_name:
+        return None
 
     remotes = remote_map(ctx)
-    if "origin" in remotes:
-        return "origin", "仓库远程源 origin"
-    if len(remotes) == 1:
-        return next(iter(remotes)), "唯一远程源"
+    if remote_name in remotes:
+        return remote_name, "仓库默认远程源"
 
-    raise TaskError(
-        '未设置仓库默认远程源。请先运行任务“仓库：设置远程仓库源”，'
-        "或在命令行使用 --remote 显式指定。"
-    )
+    log(f"已配置的仓库默认远程源不存在：{remote_name}", stream=sys.stderr)
+    return None
 
 
-def resolve_target_branch(
-    ctx: RepoContext, task_key: str, explicit_branch: str
-) -> tuple[str, str]:
-    branch_input = explicit_branch.strip()
-    if branch_input:
-        return branch_input, "手动输入"
+def require_configured_remote(ctx: RepoContext) -> tuple[str, str]:
+    remote = configured_remote_if_available(ctx)
+    if remote:
+        return remote
 
-    cache = load_task_cache(ctx, task_key)
-    cached_branch = str(cache.get("last_branch", "")).strip()
-    if cached_branch:
-        return cached_branch, "当前任务缓存"
-
-    return ensure_branch(ctx), "当前分支"
-
-
-def resolve_required_task_cache_value(
-    ctx: RepoContext,
-    task_key: str,
-    explicit_value: str,
-    cache_key: str,
-    empty_message: str,
-) -> tuple[str, str]:
-    value_input = explicit_value.strip()
-    if value_input:
-        return value_input, "手动输入"
-
-    cached_value = str(load_task_cache(ctx, task_key).get(cache_key, "")).strip()
-    if cached_value:
-        return cached_value, "当前任务缓存"
-
-    raise TaskError(empty_message)
+    raise TaskError('未设置远程源，请先执行任务“仓库：设置远程仓库源”。')
 
 
 def is_non_fast_forward_push_error(result: subprocess.CompletedProcess[str]) -> bool:
@@ -459,10 +403,15 @@ def is_non_fast_forward_push_error(result: subprocess.CompletedProcess[str]) -> 
     return any(marker in combined for marker in markers)
 
 
-def print_push_commit_diff(ctx: RepoContext, remote_name: str, branch_name: str) -> None:
-    upstream_ref = remote_tracking_ref(remote_name, branch_name)
+def print_branch_commit_diff(
+    ctx: RepoContext,
+    local_label: str,
+    remote_name: str,
+    remote_branch_name: str,
+) -> None:
+    upstream_ref = remote_tracking_ref(remote_name, remote_branch_name)
     print_section("提交差异")
-    if not fetch_remote_branch(ctx, remote_name, branch_name):
+    if not fetch_remote_branch(ctx, remote_name, remote_branch_name):
         log(f"[远程分支] {upstream_ref} 不存在。")
         return
 
@@ -481,7 +430,7 @@ def print_push_commit_diff(ctx: RepoContext, remote_name: str, branch_name: str)
         if len(parts) >= 2:
             local_count, remote_count = parts[0], parts[1]
 
-    log(f"[本地分支 {branch_name} (新 {local_count})] - [远程分支 {upstream_ref} (旧 {remote_count})]")
+    log(f"[本地分支 {local_label} (新 {local_count})] - [远程分支 {upstream_ref} (旧 {remote_count})]")
     diff_output = git_stdout(
         ctx,
         "log",
@@ -502,6 +451,15 @@ def print_push_commit_diff(ctx: RepoContext, remote_name: str, branch_name: str)
             log(f"[远程独有] {line[2:]}")
         else:
             log(line)
+
+
+def print_push_commit_diff(
+    ctx: RepoContext,
+    local_branch_name: str,
+    remote_name: str,
+    remote_branch_name: str,
+) -> None:
+    print_branch_commit_diff(ctx, local_branch_name, remote_name, remote_branch_name)
 
 
 def confirm_force_push(remote_name: str, branch_name: str) -> bool:
@@ -541,19 +499,18 @@ def print_completed_process(result: subprocess.CompletedProcess[str]) -> None:
 
 def run_push_with_optional_force(
     ctx: RepoContext,
-    task_key: str,
     push_args: list[str],
     force_push_args: list[str],
     success_message: str,
     force_success_message: str,
     remote_name: str,
-    branch_name: str,
+    local_branch_name: str,
+    remote_branch_name: str,
 ) -> int:
     push_started = perf_counter()
     log("开始执行普通推送...")
     result = git_stream(ctx, *push_args, check=False)
     if result.returncode == 0:
-        save_task_cache(ctx, task_key, last_remote=None, last_branch=branch_name)
         log(f"{success_message}，命令耗时 {format_duration(perf_counter() - push_started)}")
         return 0
 
@@ -564,12 +521,12 @@ def run_push_with_optional_force(
         )
 
     log(f"普通推送失败，命令耗时 {format_duration(perf_counter() - push_started)}")
-    print_push_commit_diff(ctx, remote_name, branch_name)
+    print_push_commit_diff(ctx, local_branch_name, remote_name, remote_branch_name)
 
     if not sys.stdin.isatty():
         raise TaskError("当前终端不可交互，无法确认是否强制推送。")
 
-    if not confirm_force_push(remote_name, branch_name):
+    if not confirm_force_push(remote_name, remote_branch_name):
         raise TaskError("已取消强制推送，远程未发生变更。")
 
     log()
@@ -582,7 +539,6 @@ def run_push_with_optional_force(
             " 详细输出见上方日志。"
         )
 
-    save_task_cache(ctx, task_key, last_remote=None, last_branch=branch_name)
     log(
         f"{force_success_message}，命令耗时 {format_duration(perf_counter() - force_started)}"
     )
@@ -789,43 +745,61 @@ def cmd_status(ctx: RepoContext, _: argparse.Namespace) -> int:
 
 
 def cmd_switch(ctx: RepoContext, args: argparse.Namespace) -> int:
-    branch_name = args.branch.strip()
-    if not branch_name:
-        raise TaskError("分支名称不能为空。")
+    branch_name = args.branch.strip() or prompt_text("请输入要切换或创建的分支名称", required=True)
     ensure_valid_branch_name(ctx, branch_name)
     commit_all_changes(ctx, f"切换分支为{branch_name}前的自动提交")
 
-    if local_branch_exists(ctx, branch_name):
-        git(ctx, "switch", branch_name)
-        log(f"已切换到已有分支：{branch_name}")
-        save_task_cache(ctx, "switch", last_branch=branch_name)
+    remote = configured_remote_if_available(ctx)
+    if not remote:
+        if local_branch_exists(ctx, branch_name):
+            git(ctx, "switch", branch_name)
+            log(f"未设置远程源，已切换到已有本地分支：{branch_name}")
+        else:
+            git(ctx, "switch", "-c", branch_name)
+            log(f"未设置远程源，已创建并切换到新本地分支：{branch_name}")
         return 0
 
-    remote_name, remote_source = resolve_remote(ctx, args.remote)
-    ensure_remote_exists(ctx, remote_name)
+    remote_name, remote_source = remote
     log(f"使用远程源: {remote_name}（来源：{remote_source}）")
-
-    log(f"本地分支不存在，正在检查远程分支：{remote_name}/{branch_name}")
+    log(f"优先检查远程分支：{remote_name}/{branch_name}")
     if fetch_remote_branch(ctx, remote_name, branch_name):
-        git(ctx, "switch", "--track", "-c", branch_name, f"{remote_name}/{branch_name}")
-        log(f"已基于远程分支创建并切换：{branch_name} -> {remote_name}/{branch_name}")
-        log("开始拉取远程分支最新内容...")
-        git_stream(ctx, "pull", "--ff-only", remote_name, branch_name)
-        log(f"已拉取远程分支最新内容：{remote_name}/{branch_name}")
+        upstream_ref = remote_tracking_ref(remote_name, branch_name)
+        if local_branch_exists(ctx, branch_name):
+            git(ctx, "switch", branch_name)
+            set_branch_upstream(ctx, branch_name, upstream_ref)
+            log(f"远程分支存在，已切换到本地同名分支并绑定：{branch_name} -> {upstream_ref}")
+            log("开始同步远程分支最新内容（fast-forward）...")
+            merge_result = git(ctx, "merge", "--ff-only", upstream_ref, check=False)
+            if merge_result.returncode == 0:
+                print_completed_process(merge_result)
+                log(f"已同步远程分支：{upstream_ref}")
+                return 0
+
+            log("同步远程分支失败，错误原因如下：", stream=sys.stderr)
+            print_completed_process(merge_result)
+            print_branch_commit_diff(ctx, branch_name, remote_name, branch_name)
+            if not confirm_force_pull(f"本地分支 {branch_name} 与远程分支 {upstream_ref} 无法 fast-forward 同步。"):
+                raise TaskError("已取消覆盖同步，当前仍停留在本地分支。")
+            git(ctx, "reset", "--hard", upstream_ref)
+            log(f"已按远程分支覆盖本地分支：{branch_name} -> {upstream_ref}")
+            return 0
+
+        git(ctx, "switch", "--track", "-c", branch_name, upstream_ref)
+        log(f"已基于远程分支创建并切换：{branch_name} -> {upstream_ref}")
+        return 0
+
+    if local_branch_exists(ctx, branch_name):
+        git(ctx, "switch", branch_name)
+        log(f"远程分支不存在，已切换到已有本地分支：{branch_name}")
     else:
         git(ctx, "switch", "-c", branch_name)
         log(f"远程分支不存在，已创建并切换到新本地分支：{branch_name}")
-        log(f"后续运行“仓库：推送当前分支”会创建远程分支：{remote_name}/{branch_name}")
-
-    save_task_cache(ctx, "switch", last_remote=None, last_branch=branch_name)
+        log(f"后续运行“仓库：推送分支”可创建远程分支：{remote_name}/{branch_name}")
     return 0
 
 
 def cmd_commit(ctx: RepoContext, args: argparse.Namespace) -> int:
-    message = args.message.strip()
-    if not message:
-        raise TaskError("提交说明不能为空。")
-
+    message = args.message.strip() or prompt_text("请输入提交说明", required=True)
     commit_all_changes(ctx, message)
     return 0
 
@@ -846,41 +820,40 @@ def commit_all_changes(ctx: RepoContext, message: str) -> bool:
     return True
 
 
-def cmd_push_current(ctx: RepoContext, args: argparse.Namespace) -> int:
-    branch_name = ensure_branch(ctx)
-    remote_name, source = resolve_remote(ctx, args.remote)
-    ensure_remote_exists(ctx, remote_name)
-
-    log(f"使用远程源: {remote_name}（来源：{source}）")
-    return run_push_with_optional_force(
-        ctx,
-        "push-current",
-        ["push", "-u", remote_name, branch_name],
-        ["push", "--force", "-u", remote_name, branch_name],
-        f"已推送当前分支到 {remote_name}/{branch_name}",
-        f"已强制推送当前分支到 {remote_name}/{branch_name}",
-        remote_name,
-        branch_name,
+def cmd_push(ctx: RepoContext, args: argparse.Namespace) -> int:
+    current_branch_name = ensure_branch(ctx)
+    remote_name, remote_source = require_configured_remote(ctx)
+    target_branch = args.branch.strip() or prompt_text(
+        "请输入要推送到的远程分支名称",
+        default=current_branch_name,
+        required=True,
     )
-
-
-def cmd_push_branch(ctx: RepoContext, args: argparse.Namespace) -> int:
-    remote_name, remote_source = resolve_remote(ctx, args.remote)
-    ensure_remote_exists(ctx, remote_name)
-    target_branch, branch_source = resolve_target_branch(
-        ctx, "push-branch", args.branch
-    )
+    ensure_valid_branch_name(ctx, target_branch)
 
     log(f"使用远程源: {remote_name}（来源：{remote_source}）")
-    log(f"目标分支: {target_branch}（来源：{branch_source}）")
+    log(f"本地分支: {current_branch_name}")
+    log(f"目标远程分支: {target_branch}")
+
+    if fetch_remote_branch(ctx, remote_name, target_branch):
+        log(f"远程分支已存在，开始普通推送：{remote_name}/{target_branch}")
+    else:
+        log(f"远程分支不存在，将自动创建并推送：{remote_name}/{target_branch}")
+
+    if target_branch == current_branch_name:
+        push_args = ["push", "-u", remote_name, current_branch_name]
+        force_push_args = ["push", "--force", "-u", remote_name, current_branch_name]
+    else:
+        push_args = ["push", remote_name, f"HEAD:{target_branch}"]
+        force_push_args = ["push", "--force", remote_name, f"HEAD:{target_branch}"]
+
     return run_push_with_optional_force(
         ctx,
-        "push-branch",
-        ["push", remote_name, f"HEAD:{target_branch}"],
-        ["push", "--force", remote_name, f"HEAD:{target_branch}"],
-        f"已将当前内容推送到 {remote_name}/{target_branch}",
-        f"已强制将当前内容推送到 {remote_name}/{target_branch}",
+        push_args,
+        force_push_args,
+        f"已推送本地分支 {current_branch_name} 到 {remote_name}/{target_branch}",
+        f"已强制推送本地分支 {current_branch_name} 到 {remote_name}/{target_branch}",
         remote_name,
+        current_branch_name,
         target_branch,
     )
 
@@ -919,19 +892,16 @@ def overwrite_with_remote_branch(
 
 def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
     current_branch_name = ensure_branch(ctx)
-    remote_name, remote_source = resolve_remote(ctx, args.remote)
-    branch_name, branch_source = resolve_required_task_cache_value(
-        ctx,
-        "pull-remote",
-        args.branch,
-        "last_branch",
-        "远程分支名称不能为空，且没有“仓库：拉取远程分支”任务缓存可复用。",
+    remote_name, remote_source = require_configured_remote(ctx)
+    branch_name = args.branch.strip() or prompt_text(
+        "请输入要拉取的远程分支名称",
+        default=current_branch_name,
+        required=True,
     )
     ensure_valid_branch_name(ctx, branch_name)
-    ensure_remote_exists(ctx, remote_name)
 
     log(f"使用远程源: {remote_name}（来源：{remote_source}）")
-    log(f"目标远程分支: {branch_name}（来源：{branch_source}）")
+    log(f"目标远程分支: {branch_name}")
     commit_all_changes(ctx, f"拉取远程分支{remote_name}/{branch_name}前的自动提交")
 
     pull_started = perf_counter()
@@ -947,7 +917,6 @@ def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
         if merge_result.returncode == 0:
             print_completed_process(merge_result)
             set_branch_upstream(ctx, branch_name, upstream_ref)
-            save_task_cache(ctx, "pull-remote", last_remote=None, last_branch=branch_name)
             log(
                 f"已合并远程分支 {upstream_ref}，命令耗时 "
                 f"{format_duration(perf_counter() - pull_started)}"
@@ -961,7 +930,6 @@ def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
             raise TaskError("已取消覆盖拉取。")
 
         overwrite_with_remote_branch(ctx, remote_name, branch_name)
-        save_task_cache(ctx, "pull-remote", last_remote=None, last_branch=branch_name)
         log(
             f"已覆盖拉取远程分支 {upstream_ref}，命令耗时 "
             f"{format_duration(perf_counter() - pull_started)}"
@@ -974,7 +942,6 @@ def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
         raise TaskError("已取消覆盖拉取。")
 
     overwrite_with_remote_branch(ctx, remote_name, branch_name)
-    save_task_cache(ctx, "pull-remote", last_remote=None, last_branch=branch_name)
     log(
         f"已拉取并切换到远程分支 {upstream_ref}，命令耗时 "
         f"{format_duration(perf_counter() - pull_started)}"
@@ -983,15 +950,23 @@ def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
 
 
 def cmd_set_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
-    remote_name = args.name.strip()
-    remote_url = args.url.strip()
-
-    if not remote_name:
-        raise TaskError("远程源名称不能为空。")
-    if not remote_url:
-        raise TaskError("远程仓库地址不能为空。")
-
     remotes = remote_map(ctx)
+    configured_remote = configured_repo_task_remote(ctx) or ("origin" if "origin" in remotes else "")
+    remote_name = args.name.strip() or prompt_text(
+        "请输入远程源名称",
+        default=configured_remote or "origin",
+        required=True,
+    )
+
+    current_url = remote_display_url(remotes, remote_name)
+    if current_url == "未设置":
+        current_url = ""
+    remote_url = args.url.strip() or prompt_text(
+        "请输入远程仓库地址",
+        default=current_url,
+        required=True,
+    )
+
     if remote_name in remotes:
         git(ctx, "remote", "set-url", remote_name, remote_url)
         git(ctx, "remote", "set-url", "--push", remote_name, remote_url)
@@ -1003,7 +978,6 @@ def cmd_set_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
     set_configured_repo_task_remote(ctx, remote_name)
     log(f"已设置仓库默认远程源：{remote_name}")
 
-    save_task_cache(ctx, "set-remote", last_remote=remote_name, last_url=remote_url)
     remotes = remote_map(ctx)
     for name in sorted(remotes):
         fetch_url = remotes[name].get("fetch", "未设置")
@@ -1027,41 +1001,32 @@ def build_parser() -> argparse.ArgumentParser:
     switch_parser = subparsers.add_parser(
         "switch", help="Switch to an existing branch or create it."
     )
-    switch_parser.add_argument("--branch", required=True)
-    switch_parser.add_argument("--remote", default="")
+    switch_parser.add_argument("--branch", default="")
     switch_parser.set_defaults(handler=cmd_switch)
 
     commit_parser = subparsers.add_parser(
         "commit", help="Stage all changes and create a commit."
     )
-    commit_parser.add_argument("--message", required=True)
+    commit_parser.add_argument("--message", default="")
     commit_parser.set_defaults(handler=cmd_commit)
 
-    push_current_parser = subparsers.add_parser(
-        "push-current", help="Push current branch to a remote."
+    push_parser = subparsers.add_parser(
+        "push", help="Push current HEAD to a remote branch."
     )
-    push_current_parser.add_argument("--remote", default="")
-    push_current_parser.set_defaults(handler=cmd_push_current)
-
-    push_branch_parser = subparsers.add_parser(
-        "push-branch", help="Push current HEAD to a target remote branch."
-    )
-    push_branch_parser.add_argument("--remote", default="")
-    push_branch_parser.add_argument("--branch", default="")
-    push_branch_parser.set_defaults(handler=cmd_push_branch)
+    push_parser.add_argument("--branch", default="")
+    push_parser.set_defaults(handler=cmd_push)
 
     pull_remote_parser = subparsers.add_parser(
         "pull-remote", help="Pull a remote branch with merge or confirmed overwrite."
     )
-    pull_remote_parser.add_argument("--remote", default="")
-    pull_remote_parser.add_argument("--branch", required=True)
+    pull_remote_parser.add_argument("--branch", default="")
     pull_remote_parser.set_defaults(handler=cmd_pull_remote)
 
     set_remote_parser = subparsers.add_parser(
         "set-remote", help="Add or update a remote binding."
     )
-    set_remote_parser.add_argument("--name", required=True)
-    set_remote_parser.add_argument("--url", required=True)
+    set_remote_parser.add_argument("--name", default="")
+    set_remote_parser.add_argument("--url", default="")
     set_remote_parser.set_defaults(handler=cmd_set_remote)
 
     return parser
