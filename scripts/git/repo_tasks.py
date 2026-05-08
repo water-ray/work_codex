@@ -235,9 +235,15 @@ def git_stdout(ctx: RepoContext, *args: str, check: bool = True) -> str:
     return git(ctx, *args, check=check).stdout.strip()
 
 
-def prompt_text(label: str, default: str = "", *, required: bool = False) -> str:
+def prompt_text(
+    label: str,
+    default: str = "",
+    *,
+    required: bool = False,
+    show_default: bool = True,
+) -> str:
     prompt = f"[{current_time_text()}] {label}"
-    if default:
+    if default and show_default:
         prompt += f"（默认：{default}）"
     prompt += ": "
 
@@ -806,9 +812,10 @@ def cmd_commit(ctx: RepoContext, args: argparse.Namespace) -> int:
 
     suggested_message = print_commit_summary(ctx, changed)
     message = args.message.strip() or prompt_text(
-        "请输入提交说明，直接回车使用默认说明",
+        "请输入提交说明(默认如上)",
         default=suggested_message,
         required=True,
+        show_default=False,
     )
     commit_all_changes(ctx, message)
     return 0
