@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex 项目基础框架"
-  short_description: "维护新项目初始化目录规则和 Codex 基础结构模板"
+  short_description: "维护新项目 AI 规则、目录约定和 Codex skill 基础框架"
   default_prompt: "Use $codex-project-foundation to initialize or maintain a Codex-ready project framework."

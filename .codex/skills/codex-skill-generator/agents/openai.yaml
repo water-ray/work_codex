@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Skill 生成器"
-  short_description: "生成项目功能任务三类可迁移 Codex skill"
+  short_description: "生成并维护项目功能任务 skill 及其命名规范"
   default_prompt: "Use $codex-skill-generator to create project and feature skills for this repository."
