@@ -1185,6 +1185,36 @@ def remote_branch_list(ctx: RepoContext, remote_name: str) -> list[str]:
     return sorted(unique_preserve_order(branches), key=lambda item: item.lower())
 
 
+def remote_branch_list_from_source(ctx: RepoContext, remote_name: str) -> list[str]:
+    log(f"正在获取远程源所有分支名称：{remote_name}")
+    result = git(ctx, "ls-remote", "--heads", remote_name, check=False)
+    if result.returncode != 0:
+        details = "\n".join(
+            part.strip()
+            for part in (result.stdout or "", result.stderr or "")
+            if part.strip()
+        )
+        message = (
+            f"远程源无效或无法访问：{remote_name}\n"
+            '请先执行任务“仓库：置远程源 🔗”设置远程源。'
+        )
+        if details:
+            message += f"\n\n[Git 输出]\n{details}"
+        raise TaskError(message)
+
+    branches: list[str] = []
+    prefix = "refs/heads/"
+    for line in result.stdout.splitlines():
+        parts = line.strip().split()
+        if len(parts) < 2 or not parts[1].startswith(prefix):
+            continue
+        branch_name = parts[1][len(prefix) :].strip()
+        if branch_name:
+            branches.append(branch_name)
+
+    return sorted(unique_preserve_order(branches), key=lambda item: item.lower())
+
+
 def print_remote_branch_options(remote_name: str, branches: list[str]) -> None:
     print_section(f"远程分支 {remote_name}")
     if not branches:
@@ -1241,6 +1271,72 @@ def choose_push_target_branch(
         branches,
         "输入编号不在远程分支列表范围内。",
     )
+
+
+def print_remote_branch_page(
+    remote_name: str,
+    branches: list[str],
+    page: int,
+    page_size: int,
+) -> None:
+    page_count = max((len(branches) + page_size - 1) // page_size, 1)
+    start = page * page_size
+    end = min(start + page_size, len(branches))
+
+    print_section(f"远程分支 {remote_name}（第 {page + 1}/{page_count} 页）")
+    if not branches:
+        log("未找到远程分支；可以直接输入分支名称。")
+        return
+
+    for index in range(start, end):
+        log(f"{index + 1}. {branches[index]}")
+
+    if len(branches) > page_size:
+        if page + 1 < page_count:
+            log("输入 0 显示下一页。")
+        else:
+            log("输入 0 回到第一页。")
+
+
+def choose_pull_remote_branch(
+    ctx: RepoContext,
+    remote_name: str,
+    default_branch: str,
+) -> str:
+    branches = remote_branch_list_from_source(ctx, remote_name)
+    if not branches:
+        return prompt_text(
+            "请输入要拉取的远程分支名称",
+            default=default_branch,
+            required=True,
+        )
+
+    page_size = 10
+    page = 0
+    page_count = (len(branches) + page_size - 1) // page_size
+    while True:
+        print_remote_branch_page(remote_name, branches, page, page_size)
+        log("输入分支序号或分支名称拉取；输入 0 翻页；直接回车使用当前分支。")
+        try:
+            answer = input(f"[{current_time_text()}] 请选择要拉取的远程分支: ").strip()
+        except EOFError:
+            return default_branch
+
+        if not answer:
+            return default_branch
+        if answer == "0":
+            if len(branches) <= page_size:
+                log("远程分支不超过 10 个，无需翻页。")
+                continue
+            page = (page + 1) % page_count
+            continue
+        if answer.isdigit():
+            selected_index = int(answer)
+            if 1 <= selected_index <= len(branches):
+                return branches[selected_index - 1]
+            log("输入编号不在远程分支列表范围内。", stream=sys.stderr)
+            continue
+        return answer
 
 
 def cmd_push(ctx: RepoContext, args: argparse.Namespace) -> int:
@@ -1316,10 +1412,10 @@ def overwrite_with_remote_branch(
 def cmd_pull_remote(ctx: RepoContext, args: argparse.Namespace) -> int:
     current_branch_name = ensure_branch(ctx)
     remote_name, remote_source = require_configured_remote(ctx)
-    branch_name = args.branch.strip() or prompt_text(
-        "请输入要拉取的远程分支名称",
-        default=current_branch_name,
-        required=True,
+    branch_name = args.branch.strip() or choose_pull_remote_branch(
+        ctx,
+        remote_name,
+        current_branch_name,
     )
     ensure_valid_branch_name(ctx, branch_name)
 
