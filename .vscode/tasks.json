@@ -10,9 +10,8 @@
         "status"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "status"
         ]
@@ -41,9 +40,8 @@
         "set-remote"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "set-remote"
         ]
@@ -72,9 +70,8 @@
         "pull-remote"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "pull-remote"
         ]
@@ -103,9 +100,8 @@
         "switch"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "switch"
         ]
@@ -134,9 +130,8 @@
         "commit"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "commit"
         ]
@@ -165,9 +160,8 @@
         "push"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "push"
         ]
@@ -196,9 +190,8 @@
         "restore-node"
       ],
       "windows": {
-        "command": "py",
+        "command": "python",
         "args": [
-          "-3",
           "${workspaceFolder}/scripts/git/repo_tasks.py",
           "restore-node"
         ]
